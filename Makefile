@@ -1,4 +1,12 @@
 #---------------------------------------------------------------------------------
+# ENVIROMENT
+#---------------------------------------------------------------------------------
+ENVPREFIX	:= 
+CC	:= $(ENVPREFIX)gcc
+CXX	:= $(ENVPREFIX)gpp
+LD	:= $(ENVPREFIX)ld
+
+#---------------------------------------------------------------------------------
 # SUFFIXES
 #---------------------------------------------------------------------------------
 # TARGET is the name of the output
@@ -18,6 +26,7 @@ CFILES	:= $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
 OFILES	:= $(CFILES:.c=.o)
 OFILES	:= $(foreach f,$(OFILES),$(BUILD)/$(notdir $(f)))
 CFLAGS	:= -Wall -std=c99 $(foreach dir,$(INCLUDE),-I$(CURDIR)/$(dir)) -DAPPNAME='"$(TARGET)"'
+LDFLAGS	:= 
 
 #---------------------------------------------------------------------------------
 # RULES
@@ -37,15 +46,15 @@ $(BUILD):
 	@[ -d $(BUILD) ] || mkdir -p $(BUILD)
 
 $(TARGET): $(BUILD) $(OFILES)
-	@gcc $(CFLAGS) -o $(TARGET) $(OFILES)
+	@$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET) $(OFILES)
 	@echo buildt... $@
 
 $(BUILD)/%.o: source/%.c
 	@echo $(notdir $@) ...
-	@gcc $(CFLAGS) -o $@ -c $^
+	@$(CC) $(CFLAGS) -o $@ -c $^
 
 $(BUILD)/%.o: source/polarssl/%.c
 	@echo $(notdir $@) ...
-	@gcc $(CFLAGS) -o $@ -c $^
+	@$(CC) $(CFLAGS) -o $@ -c $^
 
 #---------------------------------------------------------------------------------

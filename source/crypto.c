@@ -209,30 +209,48 @@ aesKeyslot keyslots[0x40] = {
 u8 ctr[AES_KEY_SIZE] = {0};
 u8 curKeyslot = 0;
 
+/* https://github.com/profi200/Project_CTR/blob/master/ctrtool/utils.c#L39 */
+u64 getbe64(const u8* p)
+{
+	u64 n = 0;
+
+	n |= (u64)p[0]<<56;
+	n |= (u64)p[1]<<48;
+	n |= (u64)p[2]<<40;
+	n |= (u64)p[3]<<32;
+	n |= (u64)p[4]<<24;
+	n |= (u64)p[5]<<16;
+	n |= (u64)p[6]<<8;
+	n |= (u64)p[7]<<0;
+	return n;
+}
+
+/* https://github.com/profi200/Project_CTR/blob/master/ctrtool/utils.c#L114 */
+void putbe64(u8* p, u64 n)
+{
+	p[7] = (u8) n;
+	p[6] = (u8) (n >> 8);
+	p[5] = (u8) (n >> 16);
+	p[4] = (u8) (n >> 24);
+	p[3] = (u8) (n >> 32);
+	p[2] = (u8) (n >> 40);
+	p[1] = (u8) (n >> 48);
+	p[0] = (u8) (n >> 56);
+}
+
 u8* rolArray(u8* arr, u32 arrLen, int nShift)
 {
-	u8* resArr = (u8*) malloc (arrLen);
-	memset((void*)resArr, 0, arrLen);
-    if(arrLen > 0)
-    {
-        int nByteShift = nShift / (sizeof(u8) * 8); 
-        int nBitShift = nShift % (sizeof(u8) * 8);
-        if (nByteShift >= arrLen) nByteShift %= arrLen;
-        int s = arrLen - 1;
-        int d = s - nByteShift;
-        for (int nCnt = 0; nCnt < arrLen; nCnt++, d--, s--)
-        {
-            while (d < 0)
-                d += arrLen;
-            while (s < 0)
-                s += arrLen;
-            u8 byteS = arr[s];
-            resArr[d] |= (u8)(byteS << nBitShift);
-            resArr[d > 0 ? d - 1 : arrLen - 1] |= (u8)(byteS >> (sizeof(u8) * 8 - nBitShift));
-        }
-    }
-	memcpy((void*)arr, (void*)resArr, arrLen);
-	free(resArr);
+	u64 arrLow = getbe64(arr);
+	u64 arrHigh = getbe64(arr + 8);
+	while(nShift--)
+	{
+		u8 carryLow = (arrLow & 0x8000000000000000LL) ? 1 : 0;
+		u8 carryHigh = (arrHigh & 0x8000000000000000LL) ? 1 : 0;
+		arrLow = (arrLow << 1) | carryHigh;
+		arrHigh = (arrHigh << 1) | carryLow;
+	}
+	putbe64(arr, arrLow);
+	putbe64(arr + 8, arrHigh);
     return arr;
 }
 
@@ -243,36 +261,17 @@ u8* rorArray(u8* arr, u32 arrLen, int nShift)
 
 void sumArray(u8* arr1, u8* arr2, int len)
 {
-	u8* resArr = (u8*) malloc(len);
-	memset((void*)resArr, 0, len);
-	bool carry = 0;
-	for(int i = len - 1; i >= 0; i--)
-	{
-		for(int j = 0; j < 8; j++)
-		{
-			bool bit1 = (arr1[i] & (1 << j)) != 0;
-			bool bit2 = (arr2[i] & (1 << j)) != 0;
-			if(bit1 && bit2)
-			{
-				if(carry) resArr[i] |= (1 << j);
-				else carry = 1;
-			}
-			else if(bit1 || bit2)
-			{
-				if(!carry) resArr[i] |= (1 << j);
-			}
-			else
-			{
-				if(carry)
-				{
-					resArr[i] |= (1 << j);
-					carry = 0;
-				}
-			}
-		}
-	}
-	memcpy((void*)arr1, (void*)resArr, len);
-	free(resArr);
+	u64 arr1Low = getbe64(arr1);
+	u64 arr1High = getbe64(arr1 + 8);
+	u64 arr2Low = getbe64(arr2);
+	u64 arr2High = getbe64(arr2 + 8);
+
+	u8 carryHigh = ((arr1High & 0x8000000000000000LL) && (arr2High & 0x8000000000000000LL)) ? 1 : 0;
+	arr1Low = (arr1Low + arr2Low) | carryHigh;
+	arr1High = arr1High + arr2High;
+
+	putbe64(arr1, arr1Low);
+	putbe64(arr1 + 8, arr1High);
 }
 
 void printArray(u8* arr, u32 len)

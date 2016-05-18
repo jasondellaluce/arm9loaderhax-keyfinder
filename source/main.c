@@ -115,23 +115,24 @@ int main(int argc, char** argv)
     	}
     	else
     	{
-    		/* We recycle the some arm9bin regions. */
+			/* We recycle the some unused arm9bin regions. */
 			u8 *curKey = arm9Binary + 0x100;
 			u8 *tmpBuf = arm9Binary + 0x110;
+
 			/* Key randomization... */
-    		memset((void*)curKey, 0x00, 0x10);
-    		for(int i = 0; i < 0x10; i++)
+			memset((void*)curKey, 0x00, 0x10);
+			for(int i = 0; i < 0x10; i++)
 			{
 				curKey[i] = (u8)(rand() % 0x100);
 			}
 
-    		/* Below is a reproduction of what the Kernel9Loader does on the console.
-    		   We bruteforce the routine with random keys in order to find some exploitable
-    		   situations. */
-    		printf("Searching for exploitable keys...\n");
-    		long attempts = 0;
+			/* Below is a reproduction of what the Kernel9Loader does on the console.
+			   We bruteforce the routine with random keys in order to find some exploitable
+			   situations. */
+			printf("Searching for exploitable keys...\n");
+			long attempts = 0;
 
-    		while(1)
+			while(1)
 			{
 				/* Setting KeyX. */
 				aesSetKey(0x11, (void*)curKey, AES_KEY);
@@ -139,15 +140,15 @@ int main(int argc, char** argv)
 				memcpy((void*)tmpBuf, (void*)(arm9Binary + 0x60), 0x10);
 				aesDecrypt((u8*)tmpBuf, 0x10, AES_MODE_ECB);
 				aesSetKey(0x16, (void*)tmpBuf, AES_KEY_X);
-	
+			
 				/* Setting KeyY. */
 				aesSetKey(0x16, (void*)(arm9Binary + 0x10), AES_KEY_Y);
-	
+			
 				/* Setting the CTR counter. We advance it to our interested location. */
 				memcpy((void*)tmpBuf, (void*)(arm9Binary + 0x20), 0x10);
 				aesAdvCtr((void*)tmpBuf, 0x1481);
 				aesSetIv((void*)tmpBuf);
-	
+			
 				/* Decrypt the entrypoint region. We skip the rest of the binary in order
 				   to improve the speed. */
 				u8* outBuf = arm9Binary + 0x800;
