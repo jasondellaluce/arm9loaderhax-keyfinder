@@ -4,6 +4,7 @@
 # TARGET is the name of the output
 # BUILD is the directory where object files & intermediate files will be placed
 # SOURCES is a list of directories containing source code
+# INCLUDE is a list of directories containing header files
 #---------------------------------------------------------------------------------
 TARGET	:= $(notdir $(CURDIR))
 SOURCES	:= source source/polarssl
@@ -15,7 +16,9 @@ BUILD	:= build
 #---------------------------------------------------------------------------------
 CFILES	:= $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
 OFILES	:= $(CFILES:.c=.o)
+OFILES	:= $(foreach f,$(OFILES),$(BUILD)/$(notdir $(f)))
 CFLAGS	:= -Wall -std=c99 $(foreach dir,$(INCLUDE),-I$(CURDIR)/$(dir)) -DAPPNAME='"$(TARGET)"'
+
 #---------------------------------------------------------------------------------
 # RULES
 #---------------------------------------------------------------------------------
@@ -34,11 +37,15 @@ $(BUILD):
 	@[ -d $(BUILD) ] || mkdir -p $(BUILD)
 
 $(TARGET): $(BUILD) $(OFILES)
-	@gcc $(CFLAGS) -o $(TARGET) $(foreach f,$(OFILES),$(BUILD)/$(notdir $(f)))
+	@gcc $(CFLAGS) -o $(TARGET) $(OFILES)
 	@echo buildt... $@
 
-%.o: %.c
+$(BUILD)/%.o: source/%.c
 	@echo $(notdir $@) ...
-	@gcc $(CFLAGS) -o $(BUILD)/$(notdir $@) -c $^
+	@gcc $(CFLAGS) -o $@ -c $^
+
+$(BUILD)/%.o: source/polarssl/%.c
+	@echo $(notdir $@) ...
+	@gcc $(CFLAGS) -o $@ -c $^
 
 #---------------------------------------------------------------------------------
