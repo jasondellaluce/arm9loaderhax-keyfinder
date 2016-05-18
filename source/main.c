@@ -6,20 +6,21 @@
 #include "types.h"
 #include "crypto.h"
 
+#define SEQUENTIAL_KEY	0
+
 /* You can specify where you will put your payload, the bruteforcer will try his best.
    Depending on how precise you want it to be, it will take more time. */
-u32 payloadDesiredPlace = 0x08006000 + 0x89A00;
-u32 payloadMaxDislocation = 0x1000;
+u32 payloadDesiredPlace = 0;
+u32 payloadMaxDislocation = 0x100;
 u8* arm9Binary = NULL;
 u32 arm9BinarySize = 0;
 
 void printBranchInstruction(void* key, u32 opcode)
 {
 	char* condStr = "";
-	char* jumpStr = "";
+	char* jumpStr = "B";
 	
-	if(((opcode >> 24) & 0xFF) == 0xEA) jumpStr = "B";
-	if(((opcode >> 24) & 0xFF) == 0xEB) jumpStr = "BL";
+	if((opcode >> 24) & 1) jumpStr = "BL";
 
 	switch(opcode >> 28)
 	{
@@ -42,8 +43,20 @@ void printBranchInstruction(void* key, u32 opcode)
 		case 0b1111 : condStr = "NV"; break;
 		
 	}
-	printArray((u8*)key, 16);
-	printf(" : %s%s 0x%08X (%08X)\n", jumpStr, condStr, ((opcode & 0x00FFFFFF) << 2) + 0x0801B024, opcode);
+	
+	/* Only "clean" branches instruction for now. */
+	if((opcode >> 24) == 0xEA || (opcode >> 24) == 0xEB)
+	{
+		printArray((u8*)key, 16);
+		printf(" : %s%s 0x%08X (%08X)\n", jumpStr, condStr, ((opcode & 0x00FFFFFF) << 2) + 0x0801B024, opcode);
+	}
+}
+
+bool isBranchInstruction(u32 opcode)
+{
+	u8 instr = (opcode >> 24) & 0xFF;
+	if(((instr & 0xF) >> 1) == 0b101) return true;
+	return false;
 }
 
 int openArm9Bin(char* firmPath)
@@ -74,6 +87,7 @@ int openArm9Bin(char* firmPath)
 		{
 			arm9Binary = (u8*) malloc (size);
 			arm9BinarySize = size;
+			payloadDesiredPlace = 0x08006000 + arm9BinarySize;
 			fseek(file, off, 0);
 			fread(arm9Binary, 1, arm9BinarySize, file);
 			fclose(file);
@@ -82,13 +96,6 @@ int openArm9Bin(char* firmPath)
 		fclose(file);
 	}
 	return 1;
-}
-
-bool isBranchInstruction(u32 opcode)
-{
-	u8 instr = (opcode >> 24) & 0xFF;
-	if(instr == 0xEA || instr == 0xEB) return true;
-	return false;
 }
 
 int main(int argc, char** argv)
@@ -105,7 +112,9 @@ int main(int argc, char** argv)
 	printf("Loading ARM9 binary... ");
 	int res = openArm9Bin(argv[1]);
 	printf("%s!\n", res ? "FAIL" : "OK");
-
+	
+	printf("Target Address : 0x%08X\n", payloadDesiredPlace);
+	printf("Jump Precision : 0x%X\n\n", payloadMaxDislocation);
 
 	if(!res)
 	{
@@ -119,12 +128,8 @@ int main(int argc, char** argv)
 			u8 *curKey = arm9Binary + 0x100;
 			u8 *tmpBuf = arm9Binary + 0x110;
 
-			/* Key randomization... */
+			/* Key initialization ... */
 			memset((void*)curKey, 0x00, 0x10);
-			for(int i = 0; i < 0x10; i++)
-			{
-				curKey[i] = (u8)(rand() % 0x100);
-			}
 
 			/* Below is a reproduction of what the Kernel9Loader does on the console.
 			   We bruteforce the routine with random keys in order to find some exploitable
@@ -133,7 +138,7 @@ int main(int argc, char** argv)
 			long attempts = 0;
 
 			while(1)
-			{
+			{				
 				/* Setting KeyX. */
 				aesSetKey(0x11, (void*)curKey, AES_KEY);
 				aesUseKeyslot(0x11);
@@ -169,11 +174,21 @@ int main(int argc, char** argv)
 						printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b[#%05ld] ", attempts);
 						printBranchInstruction((void*)curKey, opcode);
 					}
-				}else
+				}else if((attempts % 10000) == 0)
 					printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b[#%05ld]", attempts);
-
+				
 				/* Try a new key. */
-				aesAdvCtr((void*)curKey, 1);
+				if(!SEQUENTIAL_KEY)
+				{
+					for(int i = 0; i < 0x10; i++)
+					{
+						curKey[i] = (u8)(rand() % 0x100);
+					}
+				}
+				else
+				{
+					aesAdvCtr((void*)curKey, 1);
+				}
 			}
 			free(arm9Binary);
 			return 0;
