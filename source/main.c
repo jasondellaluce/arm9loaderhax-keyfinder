@@ -107,14 +107,14 @@ int main(int argc, char** argv)
 	printf("%s!\n", res ? "FAIL" : "OK");
 
 
-    if(!res)
-    {
-    	if(strncmp((char*)arm9Binary + 0x50, "K9L2", 4) != 0)
-    	{
-    		printf("The provided firm is not an N3DS 9.6+ firmware file.\n");
-    	}
-    	else
-    	{
+	if(!res)
+	{
+		if(strncmp((char*)arm9Binary + 0x50, "K9L2", 4) != 0)
+		{
+			printf("The provided firm is not an N3DS 9.6+ firmware file.\n");
+		}
+		else
+		{
 			/* We recycle the some unused arm9bin regions. */
 			u8 *curKey = arm9Binary + 0x100;
 			u8 *tmpBuf = arm9Binary + 0x110;
@@ -178,7 +178,7 @@ int main(int argc, char** argv)
 			free(arm9Binary);
 			return 0;
 		}
-    }
-    if(arm9Binary) free(arm9Binary);
+	}
+	if(arm9Binary) free(arm9Binary);
 	return 1;
 }

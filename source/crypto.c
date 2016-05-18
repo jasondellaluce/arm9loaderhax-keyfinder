@@ -251,7 +251,7 @@ u8* rolArray(u8* arr, u32 arrLen, int nShift)
 	}
 	putbe64(arr, arrLow);
 	putbe64(arr + 8, arrHigh);
-    return arr;
+	return arr;
 }
 
 u8* rorArray(u8* arr, u32 arrLen, int nShift)
