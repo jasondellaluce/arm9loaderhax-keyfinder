@@ -5,15 +5,9 @@
 #include <time.h>
 #include "types.h"
 #include "crypto.h"
+#include "params.h"
 
 #define SEQUENTIAL_KEY	0
-
-/* You can specify where you will put your payload, the bruteforcer will try his best.
-   Depending on how precise you want it to be, it will take more time. */
-u32 payloadDesiredPlace = 0;
-u32 payloadMaxDislocation = 0x100;
-u8* arm9Binary = NULL;
-u32 arm9BinarySize = 0;
 
 void printBranchInstruction(void* key, u32 opcode)
 {
@@ -59,74 +53,28 @@ bool isBranchInstruction(u32 opcode)
 	return false;
 }
 
-int openArm9Bin(char* firmPath)
-{
-	FILE* file = fopen(firmPath, "rb");
-	if(file)
-	{
-		u32 sectionType = 1;
-		u32 off = 0;
-		u32 size = 0;
-		for(int i = 0; i < 4; i++)
-		{
-			/* Navigate through FIRM header. */
-			fseek(file, 0x40 + i*0x30 + 0xC, 0);
-			fread(&sectionType, 1, 4, file);
-
-			/* ARM9 section type is 0, ARM11 is 1. */
-			if(!sectionType)
-			{
-				fseek(file, 0x40 + i*0x30, 0);
-				fread(&off, 1, 4, file);
-				fread(&size, 1, 4, file);	// Skip the Address, is not interesting here.
-				fread(&size, 1, 4, file);
-				break;
-			}
-		}
-		if(off && size)
-		{
-			arm9Binary = (u8*) malloc (size);
-			arm9BinarySize = size;
-			payloadDesiredPlace = 0x08006000 + arm9BinarySize;
-			fseek(file, off, 0);
-			fread(arm9Binary, 1, arm9BinarySize, file);
-			fclose(file);
-			return 0;
-		}
-		fclose(file);
-	}
-	return 1;
-}
-
 int main(int argc, char** argv)
 {
 	srand(time(NULL));
 	printf("Arm9LoaderHax Bruteforce Key Finder - @2016, delebile\n\n");
 
-	if(argc != 2)
-	{
-		printf("Usage : %s <firm_file>\n", APPNAME);
-		return 1;
-	}
-
-	printf("Loading ARM9 binary... ");
-	int res = openArm9Bin(argv[1]);
-	printf("%s!\n", res ? "FAIL" : "OK");
+	paramData param;
+	if(parseParams(&param, argc, argv)) printUsage();
 	
-	printf("Target Address : 0x%08X\n", payloadDesiredPlace);
-	printf("Jump Precision : 0x%X\n\n", payloadMaxDislocation);
+	printf("Target Address : 0x%08X\n", param.payloadTarget);
+	printf("Jump Precision : 0x%X\n\n", param.payloadPrecision);
 
-	if(!res)
+	if(param.arm9Binary)
 	{
-		if(strncmp((char*)arm9Binary + 0x50, "K9L2", 4) != 0)
+		if(strncmp((char*)param.arm9Binary + 0x50, "K9L2", 4) != 0)
 		{
 			printf("The provided firm is not an N3DS 9.6+ firmware file.\n");
 		}
 		else
 		{
 			/* We recycle the some unused arm9bin regions. */
-			u8 *curKey = arm9Binary + 0x100;
-			u8 *tmpBuf = arm9Binary + 0x110;
+			u8 *curKey = param.arm9Binary + 0x100;
+			u8 *tmpBuf = param.arm9Binary + 0x110;
 
 			/* Key initialization ... */
 			memset((void*)curKey, 0x00, 0x10);
@@ -135,29 +83,31 @@ int main(int argc, char** argv)
 			   We bruteforce the routine with random keys in order to find some exploitable
 			   situations. */
 			printf("Searching for exploitable keys...\n");
-			long attempts = 0;
 
-			while(1)
+			long attempts = 0;
+			bool infinite = (param.limit == 0) && (attempts == 0);
+
+			while(infinite || param.limit)
 			{				
 				/* Setting KeyX. */
 				aesSetKey(0x11, (void*)curKey, AES_KEY);
 				aesUseKeyslot(0x11);
-				memcpy((void*)tmpBuf, (void*)(arm9Binary + 0x60), 0x10);
+				memcpy((void*)tmpBuf, (void*)(param.arm9Binary + 0x60), 0x10);
 				aesDecrypt((u8*)tmpBuf, 0x10, AES_MODE_ECB);
 				aesSetKey(0x16, (void*)tmpBuf, AES_KEY_X);
 			
 				/* Setting KeyY. */
-				aesSetKey(0x16, (void*)(arm9Binary + 0x10), AES_KEY_Y);
+				aesSetKey(0x16, (void*)(param.arm9Binary + 0x10), AES_KEY_Y);
 			
 				/* Setting the CTR counter. We advance it to our interested location. */
-				memcpy((void*)tmpBuf, (void*)(arm9Binary + 0x20), 0x10);
+				memcpy((void*)tmpBuf, (void*)(param.arm9Binary + 0x20), 0x10);
 				aesAdvCtr((void*)tmpBuf, 0x1481);
 				aesSetIv((void*)tmpBuf);
 			
 				/* Decrypt the entrypoint region. We skip the rest of the binary in order
 				   to improve the speed. */
-				u8* outBuf = arm9Binary + 0x800;
-				u8* inBuf = arm9Binary + 0x15010;
+				u8* outBuf = param.arm9Binary + 0x800;
+				u8* inBuf = param.arm9Binary + 0x15010;
 				memcpy((void*)outBuf, (void*)inBuf, 0x10);
 				aesUseKeyslot(0x16);
 				aesDecrypt(outBuf, 0x10, AES_MODE_CTR);
@@ -169,7 +119,7 @@ int main(int argc, char** argv)
 				attempts++;
 				if(isBranchInstruction(opcode))
 				{
-					if((addr >= payloadDesiredPlace && addr <= payloadDesiredPlace + payloadMaxDislocation))
+					if((addr >= param.payloadTarget && addr <= param.payloadTarget + param.payloadPrecision))
 					{
 						printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b[#%05ld] ", attempts);
 						printBranchInstruction((void*)curKey, opcode);
@@ -178,22 +128,31 @@ int main(int argc, char** argv)
 					printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b[#%05ld]", attempts);
 				
 				/* Try a new key. */
-				if(!SEQUENTIAL_KEY)
+				if(param.keystore)
+				{
+					if(feof(param.keystore)) break;
+					fread(curKey, 1, 0x10, param.keystore);
+				}
+				else if(!SEQUENTIAL_KEY)
 				{
 					for(int i = 0; i < 0x10; i++)
 					{
 						curKey[i] = (u8)(rand() % 0x100);
 					}
+					param.limit--;
 				}
 				else
 				{
 					aesAdvCtr((void*)curKey, 1);
+					param.limit--;
 				}
 			}
-			free(arm9Binary);
+			if(param.keystore) fclose(param.keystore);
+			free(param.arm9Binary);
 			return 0;
 		}
 	}
-	if(arm9Binary) free(arm9Binary);
+	if(param.keystore) fclose(param.keystore);
+	if(param.arm9Binary) free(param.arm9Binary);
 	return 1;
 }
